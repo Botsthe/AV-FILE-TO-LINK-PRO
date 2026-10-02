@@ -65,7 +65,7 @@ TUTORIAL_LINK_2 = environ.get('TUTORIAL_LINK_2', 'https://t.me/2')
 # =========================================================
 IS_VERIFY = is_enabled(environ.get("IS_VERIFY", "True"), True)
 IS_SECOND_VERIFY = is_enabled(environ.get("IS_SECOND_VERIFY", "True"), True)
-IS_SHORTLINK = is_enabled(environ.get('IS_SHORTLINK', "True"), True)
+IS_SHORTLINK = is_enabled(environ.get('IS_SHORTLINK', "False"), False)
 
 # Verification Config
 VERIFY_EXPIRE = int(environ.get('VERIFY_EXPIRE', 60)) # In Minutes/Hours based on logic
