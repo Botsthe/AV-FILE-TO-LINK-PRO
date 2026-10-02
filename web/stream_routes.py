@@ -1,4 +1,5 @@
 import time
+import asyncio
 from aiohttp import web
 import re
 import math
@@ -237,14 +238,36 @@ async def media_streamer(request: web.Request, id: int, secure_hash: str):
             mime_type = "application/octet-stream"
             file_name = f"{secrets.token_hex(2)}.unknown"
 
-    return web.Response(
+    response = web.StreamResponse(
         status=206 if range_header else 200,
-        body=body,
         headers={
-            "Content-Type": f"{mime_type}",
+            "Content-Type": mime_type,
             **({"Content-Range": f"bytes {from_bytes}-{until_bytes}/{file_size}"} if range_header else {}),
             "Content-Length": str(req_length),
             "Content-Disposition": f'{disposition}; filename="{file_name}"',
             "Accept-Ranges": "bytes",
         },
-)
+    )
+
+    await response.prepare(request)
+
+    # HEAD requests return headers without downloading the Telegram file.
+    if request.method == "HEAD":
+        await response.write_eof()
+        return response
+
+    try:
+        async for chunk in body:
+            if chunk:
+                await response.write(chunk)
+    except (ConnectionResetError, asyncio.CancelledError):
+        logging.info("Client disconnected while streaming file %s", id)
+    except Exception:
+        logging.exception("Streaming failed for file %s", id)
+    finally:
+        try:
+            await response.write_eof()
+        except (ConnectionResetError, RuntimeError):
+            pass
+
+    return response
