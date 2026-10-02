@@ -143,12 +143,12 @@ class_cache = {}
 
 
 async def media_streamer(request: web.Request, id: int, secure_hash: str):
-    range_header = request.headers.get("Range", 0)
+    range_header = request.headers.get("Range")
 
     index = min(work_loads, key=work_loads.get)
     faster_client = multi_clients[index]
 
-    if MULTI_CLIENT:
+    if len(multi_clients) > 1:
         logging.info(f"Client {index} is now serving {request.remote}")
 
     if faster_client in class_cache:
@@ -168,20 +168,42 @@ async def media_streamer(request: web.Request, id: int, secure_hash: str):
 
     file_size = file_id.file_size
 
+    # Parse HTTP Range safely. This supports normal and suffix ranges
+    # without crashing on malformed Range headers.
     if range_header:
-        from_bytes, until_bytes = range_header.replace("bytes=", "").split("-")
-        from_bytes = int(from_bytes)
-        until_bytes = int(until_bytes) if until_bytes else file_size - 1
-    else:
-        from_bytes = request.http_range.start or 0
-        until_bytes = (request.http_range.stop or file_size) - 1
+        try:
+            http_range = request.http_range
+            start = http_range.start
+            stop = http_range.stop
 
-    if (until_bytes > file_size) or (from_bytes < 0) or (until_bytes < from_bytes):
+            if start is None:
+                start = 0
+
+            # bytes=-N means the last N bytes.
+            if start < 0:
+                from_bytes = max(file_size + start, 0)
+            else:
+                from_bytes = start
+
+            until_bytes = (stop if stop is not None else file_size) - 1
+        except (ValueError, IndexError, TypeError):
+            return web.Response(
+                status=416,
+                text="416: Range not satisfiable",
+                headers={"Content-Range": f"bytes */{file_size}"},
+            )
+    else:
+        from_bytes = 0
+        until_bytes = file_size - 1
+
+    if file_size <= 0 or from_bytes >= file_size or until_bytes < from_bytes:
         return web.Response(
             status=416,
-            body="416: Range not satisfiable",
+            text="416: Range not satisfiable",
             headers={"Content-Range": f"bytes */{file_size}"},
         )
+
+    until_bytes = min(until_bytes, file_size - 1)
 
     chunk_size = 1024 * 1024
     until_bytes = min(until_bytes, file_size - 1)
@@ -191,7 +213,7 @@ async def media_streamer(request: web.Request, id: int, secure_hash: str):
     last_part_cut = until_bytes % chunk_size + 1
 
     req_length = until_bytes - from_bytes + 1
-    part_count = math.ceil(until_bytes / chunk_size) - math.floor(offset / chunk_size)
+    part_count = math.ceil((until_bytes + 1) / chunk_size) - math.floor(offset / chunk_size)
     body = tg_connect.yield_file(
         file_id, index, offset, first_part_cut, last_part_cut, part_count, chunk_size
     )
@@ -208,7 +230,9 @@ async def media_streamer(request: web.Request, id: int, secure_hash: str):
                 file_name = f"{secrets.token_hex(2)}.unknown"
     else:
         if file_name:
-            mime_type = mimetypes.guess_type(file_id.file_name)
+            mime_type = mimetypes.guess_type(file_id.file_name)[0]
+            if not mime_type:
+                mime_type = "application/octet-stream"
         else:
             mime_type = "application/octet-stream"
             file_name = f"{secrets.token_hex(2)}.unknown"
@@ -218,7 +242,7 @@ async def media_streamer(request: web.Request, id: int, secure_hash: str):
         body=body,
         headers={
             "Content-Type": f"{mime_type}",
-            "Content-Range": f"bytes {from_bytes}-{until_bytes}/{file_size}",
+            **({"Content-Range": f"bytes {from_bytes}-{until_bytes}/{file_size}"} if range_header else {}),
             "Content-Length": str(req_length),
             "Content-Disposition": f'{disposition}; filename="{file_name}"',
             "Accept-Ranges": "bytes",
