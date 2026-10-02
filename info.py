@@ -1,9 +1,16 @@
 import re
 import os
+import logging
 from os import environ, getenv
 from Script import script
 
 # --- Helper Functions ---
+def required_env(name):
+    value = environ.get(name)
+    if value is None or not value.strip():
+        raise RuntimeError(f"Required environment variable is missing: {name}")
+    return value.strip()
+
 def is_enabled(value, default):
     if value.lower() in ["true", "yes", "1", "on"]:
         return True
@@ -15,9 +22,9 @@ def is_enabled(value, default):
 # 🤖 BOT INFO & CREDENTIALS
 # =========================================================
 SESSION = environ.get('SESSION', 'Webavbot')
-API_ID = int(environ.get('API_ID', '12000656'))
-API_HASH = environ.get('API_HASH', 'd927c13beaaf5110f2c071273')
-BOT_TOKEN = environ.get('BOT_TOKEN', '70917168:AAF8TzmnNYW721xIUUuseLU41xa5bRA')
+API_ID = int(required_env('API_ID'))
+API_HASH = required_env('API_HASH')
+BOT_TOKEN = required_env('BOT_TOKEN')
 
 # Admin Settings
 ADMINS = [int(x) for x in environ.get('ADMINS', '5977931010').split()]
@@ -26,8 +33,8 @@ OWNER_USERNAME = environ.get("OWNER_USERNAME", 'BOT_OWNER26')
 # =========================================================
 # 🗄️ DATABASE CONNECTION
 # =========================================================
-DB_URL = environ.get('DATABASE_URI', "mongodb+srv://teshsjsg1:axxxxtz@testing.kwuyhwka.mongodb.net/?appName=testing")
-DB_NAME = environ.get('DATABASE_NAME', "testing")
+DB_URL = required_env('DATABASE_URI')
+DB_NAME = environ.get('DATABASE_NAME', 'testing').strip() or 'testing'
 
 # =========================================================
 # 📢 CHANNELS & LOGS
@@ -63,11 +70,11 @@ IS_SHORTLINK = is_enabled(environ.get('IS_SHORTLINK', "True"), True)
 # Verification Config
 VERIFY_EXPIRE = int(environ.get('VERIFY_EXPIRE', 60)) # In Minutes/Hours based on logic
 SHORTLINK_URL = environ.get('SHORTLINK_URL', 'mdiskshortner.link')
-SHORTLINK_API = environ.get('SHORTLINK_API', '96a3c0e8ae1b1abd429906762e38a40d3f2ec56c')
+SHORTLINK_API = environ.get('SHORTLINK_API', '').strip()
 
 # Second Verification Config
 SHORTLINK_WEBSITE2 = environ.get("SHORTENER_WEBSITE2", "mdiskshortner.link")
-SHORTLINK_API2 = environ.get("SHORTENER_API2", "96a3c0e8ae1b1abd429906762e38a40d3f2ec56c")
+SHORTLINK_API2 = environ.get("SHORTENER_API2", '').strip()
 
 # =========================================================
 # ⚙️ SETTINGS & LIMITS
@@ -118,17 +125,20 @@ HAS_SSL = is_enabled(getenv("HAS_SSL", "False"), False)
 BIND_ADDRESS = getenv("WEB_SERVER_BIND_ADDRESS", "127.0.0.1")
 
 # URL Generation
-# Use provided URL from env, or generate based on FQDN/IP
-custom_url = environ.get("URL")
-if custom_url:
-    URL = custom_url
-else:
-    FQDN = getenv("FQDN", BIND_ADDRESS)
-    PROTOCOL = "https" if HAS_SSL else "http"
-    PORT_SEGMENT = "" if NO_PORT else f":{PORT}"
-    URL = f"{PROTOCOL}://{FQDN}{PORT_SEGMENT}/"
+# Always prefer an explicit public URL on Koyeb/Cloudflare.
+custom_url = environ.get("URL", "").strip()
 
-# Default fallback if nothing works (Matches your provided koyeb link)
-if not URL or URL == "/":
-    URL = "https://forward-jolyn-vnnmbs-62200c9e.koyeb.app/"
-    
+if custom_url:
+    URL = custom_url.rstrip("/") + "/"
+else:
+    FQDN = getenv("FQDN", "").strip()
+    if FQDN:
+        PROTOCOL = "https" if HAS_SSL else "http"
+        PORT_SEGMENT = "" if NO_PORT else f":{PORT}"
+        URL = f"{PROTOCOL}://{FQDN}{PORT_SEGMENT}/"
+    else:
+        # Never silently generate public links to 127.0.0.1.
+        URL = ""
+        logging.warning(
+            "URL is not configured. Set URL to the public HTTPS address of this deployment."
+        )
