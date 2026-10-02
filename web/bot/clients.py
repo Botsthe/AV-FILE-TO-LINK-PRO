@@ -8,6 +8,7 @@ from . import multi_clients, work_loads, WebavBot
 async def initialize_clients():
     multi_clients[0] = WebavBot
     work_loads[0] = 0
+
     all_tokens = TokenParser().parse_from_env()
     if not all_tokens:
         print("No additional clients found, using default client")
@@ -19,6 +20,7 @@ async def initialize_clients():
             if client_id == len(all_tokens):
                 await asyncio.sleep(2)
                 print("This will take some time, please wait...")
+
             client = await Client(
                 name=str(client_id),
                 api_id=API_ID,
@@ -28,17 +30,32 @@ async def initialize_clients():
                 no_updates=True,
                 in_memory=True,
             ).start()
+
             work_loads[client_id] = 0
             return client_id, client
-        except Exception:
-            logging.error(f"Failed starting Client - {client_id} Error:", exc_info=True)
 
-    clients = await asyncio.gather(
+        except Exception:
+            logging.error(
+                f"Failed starting Client - {client_id}",
+                exc_info=True
+            )
+            return None
+
+    results = await asyncio.gather(
         *[start_client(i, token) for i, token in all_tokens.items()]
     )
-    multi_clients.update(dict(clients))
-    if len(multi_clients) != 1:
-        MULTI_CLIENT = True
-        print("Multi-Client Mode Enabled")
+
+    # Ignore clients that failed to start instead of inserting None keys.
+    clients = {
+        client_id: client
+        for result in results
+        if result is not None
+        for client_id, client in [result]
+    }
+
+    multi_clients.update(clients)
+
+    if len(multi_clients) > 1:
+        print(f"Multi-Client Mode Enabled ({len(multi_clients)} clients)")
     else:
         print("No additional clients were initialized, using default client")
