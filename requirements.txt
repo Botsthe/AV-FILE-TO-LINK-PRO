@@ -1,9 +1,9 @@
-Pyrofork==2.3.48
+Pyrofork==2.3.69
 tgcrypto
-pymongo[srv]==3.12
+pymongo[srv]==4.18.3
 aiohttp
 python-dotenv
-motor
+motor==3.7.1
 aiofiles
 dnspython
 apscheduler
